@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import SearchBar from "../components/SearchBar";
 import UploadBar from "../components/UploadBar";
+import CreateFolder from "../components/CreateFolder";
 import { useNavigate } from "react-router-dom";
 
 // ===============================
@@ -446,22 +447,21 @@ const goToParentFolder = async () => {
 // CREATE FOLDER
 // ===============================
 const createFolder = async () => {
-
   if (!folderName.trim()) {
     alert("Enter a folder name.");
     return;
   }
 
   try {
-
     const session = JSON.parse(
       localStorage.getItem("session")
     );
 
-    const response = await api.post(
+    await api.post(
       "/folders",
       {
-        folder_name: folderName,
+        folder_name: folderName.trim(),
+        parent_folder_id: currentFolder?.id || null,
       },
       {
         headers: {
@@ -470,26 +470,30 @@ const createFolder = async () => {
       }
     );
 
-    alert(response.data.message);
+    alert("Folder created successfully!");
 
     setFolderName("");
 
+    // Refresh folders
     fetchFolders();
 
   } catch (error) {
-
-    console.error(error);
+    console.error("CREATE FOLDER ERROR:", error);
+    console.error(
+      "Server response:",
+      error.response?.data
+    );
 
     alert(
       error.response?.data?.message ||
       "Failed to create folder."
     );
-
   }
-
 };
 
-  // ===============================
+
+
+// ===============================
   // DOWNLOAD FILE
   // ===============================
   const downloadFile = async (fileId, fileName) => {
@@ -1408,6 +1412,12 @@ return (
 <h2 className="text-2xl font-bold mb-4">
   Folders
 </h2>
+
+<CreateFolder
+  folderName={folderName}
+  setFolderName={setFolderName}
+  createFolder={createFolder}
+/>
 
 <div
   className="space-y-2 mb-8"
