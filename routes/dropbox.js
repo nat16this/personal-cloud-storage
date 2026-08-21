@@ -1,3 +1,8 @@
+const express = require("express");
+const { DropboxAuth } = require("dropbox");
+
+const router = express.Router();
+
 router.get("/connect", async (req, res) => {
   try {
     const dbxAuth = new DropboxAuth({
@@ -22,3 +27,5 @@ router.get("/connect", async (req, res) => {
     });
   }
 });
+
+module.exports = router;
