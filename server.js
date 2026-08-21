@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const fileRoutes = require("./routes/fileRoutes");
+const dropboxRoutes = require("./routes/dropbox");
 const folderRoutes = require("./routes/folderRoutes");
 
 const protectedRoutes = require("./routes/protectedRoutes");
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/files", fileRoutes);
+app.use("/api/dropbox", dropboxRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api", fileRoutes);
 app.use("/api", folderRoutes);
