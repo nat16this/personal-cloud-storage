@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { DropboxAuth } = require("dropbox");
 const authenticateUser = require("../middleware/authMiddleware");
-const supabase = require("../config/supabase");
+const supabaseAdmin = require("../config/supabaseAdmin");
 
 
 // STEP 1: Start Dropbox OAuth
@@ -83,9 +83,9 @@ router.get("/callback", async (req, res) => {
 
 
     // Save Dropbox connection
-    const { error: dbError } = await supabase
-      .from("dropbox_connections")
-      .upsert(
+    const { error: dbError } = await supabaseAdmin
+  .from("dropbox_connections")
+    .upsert(
         {
           user_id: userId,
           access_token: accessToken,
