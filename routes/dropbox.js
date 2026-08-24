@@ -199,5 +199,92 @@ res.redirect(
   }
 });
 
+// ============================================================
+// STEP 4: List Dropbox files
+// ============================================================
+
+router.get("/files", authenticateUser, async (req, res) => {
+  try {
+    const { getDropboxClient } = require("../services/dropboxService");
+
+    const userId = req.user.id;
+
+    console.log("Fetching Dropbox files for user:", userId);
+
+    const { dbx } = await getDropboxClient(userId);
+
+    const result = await dbx.filesListFolder({
+      path: "",
+    });
+
+    const files = result.result.entries
+      .filter((entry) => entry[".tag"] === "file")
+      .map((file) => ({
+        id: file.id,
+        name: file.name,
+        path: file.path_display,
+        size: file.size,
+        modified: file.server_modified,
+      }));
+
+    res.json({
+      success: true,
+      files,
+    });
+
+  } catch (error) {
+    console.error("Dropbox files error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load Dropbox files.",
+    });
+  }
+});
+
+
+// ============================================================
+// STEP 4: List Dropbox files
+// ============================================================
+
+router.get("/files", authenticateUser, async (req, res) => {
+  try {
+    const { getDropboxClient } = require("../services/dropboxService");
+
+    const userId = req.user.id;
+
+    console.log("Fetching Dropbox files for user:", userId);
+
+    const { dbx } = await getDropboxClient(userId);
+
+    const result = await dbx.filesListFolder({
+      path: "",
+    });
+
+    const files = result.result.entries
+      .filter((entry) => entry[".tag"] === "file")
+      .map((file) => ({
+        id: file.id,
+        name: file.name,
+        path: file.path_display,
+        size: file.size,
+        modified: file.server_modified,
+      }));
+
+    res.json({
+      success: true,
+      files,
+    });
+
+  } catch (error) {
+    console.error("Dropbox files error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load Dropbox files.",
+    });
+  }
+});
+
 
 module.exports = router;
