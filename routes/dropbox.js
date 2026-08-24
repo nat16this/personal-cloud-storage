@@ -29,7 +29,12 @@ router.get("/connect", authenticateUser, async (req, res) => {
       "offline"
     );
 
-    res.redirect(authUrl);
+    // Send the Dropbox URL back to the frontend.
+    // The frontend will then redirect the browser to Dropbox.
+    res.json({
+      success: true,
+      authUrl,
+    });
 
   } catch (error) {
     console.error("Dropbox OAuth error:", error);
@@ -41,7 +46,6 @@ router.get("/connect", authenticateUser, async (req, res) => {
     });
   }
 });
-
 
 // ============================================================
 // STEP 2: Dropbox OAuth Callback

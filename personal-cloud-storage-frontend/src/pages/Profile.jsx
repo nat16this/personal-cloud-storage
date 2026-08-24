@@ -22,7 +22,7 @@ export default function Profile() {
       }
 
       const response = await fetch(
-        "http://localhost:3000/api/profile",
+        "https://personal-cloud-storage-1-r52f.onrender.com/api/profile",
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -67,7 +67,7 @@ export default function Profile() {
       }
 
       const response = await fetch(
-        "http://localhost:3000/api/profile",
+        "https://personal-cloud-storage-1-r52f.onrender.com/api/profile",
         {
           method: "PATCH",
 
@@ -190,6 +190,66 @@ export default function Profile() {
             </button>
 
           </form>
+
+{/* DROPBOX */}
+
+<div className="mt-8 pt-8 border-t border-slate-700">
+
+  <h2 className="text-2xl font-bold mb-4">
+    Dropbox
+  </h2>
+
+  <p className="text-gray-400 mb-4">
+    Connect your Dropbox account to access your Dropbox files.
+  </p>
+
+  <button
+  type="button"
+  onClick={async () => {
+    try {
+      setMessage("");
+
+      const session = JSON.parse(
+        localStorage.getItem("session")
+      );
+
+      if (!session?.access_token) {
+        setMessage("You are not logged in.");
+        return;
+      }
+
+      const response = await fetch(
+        "https://personal-cloud-storage-1-r52f.onrender.com/api/dropbox/connect",
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.authUrl) {
+        throw new Error(
+          data.error || "Failed to start Dropbox connection."
+        );
+      }
+
+      // Redirect the browser to Dropbox
+      window.location.href = data.authUrl;
+
+    } catch (error) {
+      console.error("DROPBOX CONNECT ERROR:", error);
+      setMessage(error.message);
+    }
+  }}
+  className="w-full bg-blue-600 hover:bg-blue-500 rounded-lg p-3 font-semibold"
+>
+  Connect Dropbox
+</button>
+
+</div>
 
           {/* MESSAGE */}
 
