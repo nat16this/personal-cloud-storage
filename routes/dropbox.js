@@ -177,14 +177,15 @@ router.get("/callback", async (req, res) => {
     }
 
 
-    // ========================================================
-    // SUCCESS
-    // ========================================================
+// ============================================================
+// SUCCESS
+// ============================================================
 
-    res.json({
-      success: true,
-      message: "Dropbox connected and saved successfully!",
-    });
+console.log("Dropbox connected successfully for user:", userId);
+
+res.redirect(
+  "http://localhost:5173/profile?dropbox=connected"
+);
 
   } catch (error) {
 
