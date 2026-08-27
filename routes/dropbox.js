@@ -176,6 +176,17 @@ router.get("/callback", async (req, res) => {
       });
     }
 
+console.log("================================");
+console.log("DROPBOX CALLBACK SUCCESS");
+console.log("User:", userId);
+console.log("Redirecting to frontend...");
+console.log("================================");
+
+return res.redirect(
+  "http://localhost:5173/profile?dropbox=connected"
+);
+
+
 
 // ============================================================
 // SUCCESS
@@ -242,6 +253,47 @@ router.get("/files", authenticateUser, async (req, res) => {
   }
 });
 
+
+// ============================================================
+// VIEW / DOWNLOAD A DROPBOX FILE
+// ============================================================
+
+router.get("/file", authenticateUser, async (req, res) => {
+  try {
+    const { path } = req.query;
+
+    if (!path) {
+      return res.status(400).json({
+        success: false,
+        message: "Dropbox file path is required.",
+      });
+    }
+
+    const { dbx } = await getDropboxClient(req.user.id);
+
+    const result = await dbx.filesDownload({
+      path,
+    });
+
+    const file = result.result;
+
+    res.setHeader(
+      "Content-Type",
+      file.media_info?.metadata?.mime_type ||
+      "application/octet-stream"
+    );
+
+    res.send(file.fileBinary);
+
+  } catch (error) {
+    console.error("Dropbox file error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to retrieve Dropbox file.",
+    });
+  }
+});
 
 
 
