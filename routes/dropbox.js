@@ -165,9 +165,9 @@ router.get("/callback", async (req, res) => {
     // REDIRECT TO FRONTEND
     // ========================================================
 
-    return res.redirect(
-      "https://personal-cloud-storage-frontend.onrender.com/profile?dropbox=connected"
-    );
+return res.redirect(
+  "http://localhost:5173/profile?dropbox=connected"
+);
 
   } catch (error) {
     console.error(
