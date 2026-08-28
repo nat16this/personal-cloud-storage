@@ -97,14 +97,19 @@ router.get(
         clientSecret: DROPBOX_CLIENT_SECRET,
       });
 
-      const authUrl =
-        await dbxAuth.getAuthenticationUrl(
-          DROPBOX_REDIRECT_URI,
-          userId,
-          "code",
-          "offline"
-        );
-
+const authUrl =
+  await dbxAuth.getAuthenticationUrl(
+    DROPBOX_REDIRECT_URI,
+    userId,
+    "code",
+    "offline",
+    [
+      "files.metadata.read",
+      "files.content.read"
+    ],
+    "user"
+  );
+  
       console.log(
         "Dropbox authorization URL created."
       );

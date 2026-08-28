@@ -17,9 +17,9 @@ async function getDropboxClient(userId) {
     throw new Error("DROPBOX_APP_SECRET is missing.");
   }
 
-  // ------------------------------------------------------------
-  // LOAD SAVED DROPBOX CONNECTION
-  // ------------------------------------------------------------
+  // ============================================================
+  // LOAD DROPBOX CONNECTION
+  // ============================================================
 
   const { data: connection, error } = await supabaseAdmin
     .from("dropbox_connections")
@@ -52,6 +52,12 @@ async function getDropboxClient(userId) {
     );
   }
 
+  if (!connection.access_token) {
+    throw new Error(
+      "Dropbox access token is missing. Please reconnect Dropbox."
+    );
+  }
+
   console.log("================================");
   console.log("DROPBOX CONNECTION");
   console.log("User:", userId);
@@ -69,44 +75,63 @@ async function getDropboxClient(userId) {
   );
   console.log("================================");
 
-  // ------------------------------------------------------------
+  // ============================================================
   // CREATE DROPBOX AUTH OBJECT
-  // ------------------------------------------------------------
+  // ============================================================
 
-  const dbxAuth = new DropboxAuth({
+  const authOptions = {
     clientId,
     clientSecret,
     accessToken: connection.access_token,
     refreshToken: connection.refresh_token,
-    accessTokenExpiresAt: connection.expires_at
-      ? new Date(connection.expires_at)
-      : undefined,
-  });
+  };
 
-  // ------------------------------------------------------------
-  // REFRESH TOKEN IF NECESSARY
-  // ------------------------------------------------------------
+  // IMPORTANT:
+  //
+  // DropboxAuth uses AccessTokenExpiresAt.
+  //
+  // This capitalization matters.
+  //
+
+  if (connection.expires_at) {
+    const expiresAt = new Date(
+      connection.expires_at
+    );
+
+    if (!Number.isNaN(expiresAt.getTime())) {
+      authOptions.AccessTokenExpiresAt = expiresAt;
+    }
+  }
+
+  const dbxAuth = new DropboxAuth(
+    authOptions
+  );
+
+  // ============================================================
+  // CHECK / REFRESH ACCESS TOKEN
+  // ============================================================
 
   try {
     await dbxAuth.checkAndRefreshAccessToken();
 
     console.log(
-      "Dropbox access token checked successfully."
+      "Dropbox access token checked/refreshed successfully."
     );
   } catch (error) {
     console.error(
-      "Dropbox token refresh failed:",
-      error
+      "Dropbox token refresh failed:"
     );
 
+    console.error(error);
+
     throw new Error(
-      "Dropbox authorization has expired or been revoked. Please reconnect Dropbox."
+      "Dropbox authorization has expired or the refresh token is invalid. Please reconnect Dropbox."
     );
   }
 
-  // ------------------------------------------------------------
-  // GET CURRENT TOKENS
-  // ------------------------------------------------------------
+  // ============================================================
+  // GET CURRENT TOKEN VALUES
+  // ============================================================
 
   const accessToken =
     dbxAuth.getAccessToken();
@@ -123,9 +148,24 @@ async function getDropboxClient(userId) {
     );
   }
 
-  // ------------------------------------------------------------
-  // SAVE REFRESHED TOKEN
-  // ------------------------------------------------------------
+  console.log(
+    "Dropbox access token available:",
+    !!accessToken
+  );
+
+  console.log(
+    "Dropbox refresh token available:",
+    !!refreshToken
+  );
+
+  console.log(
+    "Dropbox token expiration:",
+    expiresAt
+  );
+
+  // ============================================================
+  // SAVE CURRENT TOKEN INFORMATION
+  // ============================================================
 
   const updateData = {
     access_token: accessToken,
@@ -149,15 +189,15 @@ async function getDropboxClient(userId) {
       .eq("user_id", userId);
 
   if (updateError) {
-    console.error(
+    console.warn(
       "Warning: failed to save refreshed Dropbox token:",
       updateError
     );
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // CREATE DROPBOX CLIENT
-  // ------------------------------------------------------------
+  // ============================================================
 
   const dbx = new Dropbox({
     auth: dbxAuth,
