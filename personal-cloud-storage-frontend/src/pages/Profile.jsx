@@ -38,20 +38,12 @@ export default function Profile() {
 
   const getAccessToken = () => {
     try {
-      // --------------------------------------------------------
-      // First try the application's token key.
-      // --------------------------------------------------------
-
       const directToken =
         localStorage.getItem("token");
 
       if (directToken) {
         return directToken;
       }
-
-      // --------------------------------------------------------
-      // Then try the stored Supabase session.
-      // --------------------------------------------------------
 
       const sessionString =
         localStorage.getItem("session");
@@ -88,7 +80,6 @@ export default function Profile() {
 
   const fetchProfile = async () => {
     try {
-      setLoading(true);
       setError("");
 
       const token =
@@ -100,16 +91,10 @@ export default function Profile() {
       );
 
       if (!token) {
-        setError(
+        throw new Error(
           "You are not logged in. Please log in again."
         );
-
-        return;
       }
-
-      console.log(
-        "Loading profile..."
-      );
 
       const response =
         await fetch(
@@ -120,6 +105,7 @@ export default function Profile() {
             headers: {
               Authorization:
                 `Bearer ${token}`,
+
               Accept:
                 "application/json",
             },
@@ -175,9 +161,6 @@ export default function Profile() {
         error?.message ||
         "Failed to load profile."
       );
-
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -199,11 +182,9 @@ export default function Profile() {
         getAccessToken();
 
       if (!token) {
-        setError(
+        throw new Error(
           "You are not logged in. Please log in again."
         );
-
-        return;
       }
 
       const response =
@@ -241,11 +222,6 @@ export default function Profile() {
           jsonError
         );
       }
-
-      console.log(
-        "PROFILE UPDATE RESPONSE:",
-        data
-      );
 
       if (!response.ok) {
         throw new Error(
@@ -303,19 +279,13 @@ export default function Profile() {
       );
 
       if (!token) {
-        setError(
+        throw new Error(
           "You are not logged in. Please log in again."
         );
-
-        return;
       }
 
       setMessage(
         "Starting Dropbox connection..."
-      );
-
-      console.log(
-        "Starting Dropbox OAuth..."
       );
 
       const response =
@@ -359,33 +329,23 @@ export default function Profile() {
         );
       }
 
-      if (
-        !data?.success ||
-        !data?.authUrl
-      ) {
+      if (!data?.authUrl) {
         throw new Error(
-          data?.message ||
-          data?.error ||
           "Dropbox authorization URL was not returned."
         );
       }
 
       console.log(
-        "Redirecting to Dropbox..."
+        "REDIRECTING TO DROPBOX:"
       );
 
-      // --------------------------------------------------------
-      // IMPORTANT:
-      //
-      // The backend supplies the Dropbox authorization URL.
-      // We redirect directly to it.
-      //
-      // We DO NOT manually redirect to:
-      // /profile?dropbox=connected
-      // --------------------------------------------------------
+      console.log(
+        data.authUrl
+      );
 
-      window.location.href =
-        data.authUrl;
+      window.location.assign(
+        data.authUrl
+      );
 
     } catch (error) {
       console.error(
@@ -407,7 +367,6 @@ export default function Profile() {
   const fetchDropboxFiles = async () => {
     try {
       setDropboxLoading(true);
-      setMessage("");
       setError("");
 
       const token =
@@ -419,15 +378,13 @@ export default function Profile() {
       );
 
       if (!token) {
-        setError(
+        throw new Error(
           "You are not logged in. Please log in again."
         );
-
-        return;
       }
 
       console.log(
-        "Fetching Dropbox files..."
+        "FETCHING DROPBOX FILES..."
       );
 
       const response =
@@ -483,11 +440,6 @@ export default function Profile() {
         true
       );
 
-      console.log(
-        "Dropbox files loaded:",
-        files
-      );
-
       setMessage(
         `Dropbox connected. Found ${files.length} file(s).`
       );
@@ -522,22 +474,11 @@ export default function Profile() {
       const token =
         getAccessToken();
 
-      console.log(
-        "DROPBOX VIEW TOKEN:",
-        token ? "FOUND" : "NOT FOUND"
-      );
-
       if (!token) {
-        setError(
+        throw new Error(
           "You are not logged in. Please log in again."
         );
-
-        return;
       }
-
-      // --------------------------------------------------------
-      // Get Dropbox path.
-      // --------------------------------------------------------
 
       const path =
         typeof file === "string"
@@ -556,31 +497,9 @@ export default function Profile() {
           ? file.name
           : path.split("/").pop();
 
-      console.log(
-        "================================"
-      );
-
-      console.log(
-        "Opening Dropbox file:",
-        fileName
-      );
-
-      console.log(
-        "Dropbox path:",
-        path
-      );
-
-      console.log(
-        "================================"
-      );
-
       setOpeningFile(
         path
       );
-
-      // --------------------------------------------------------
-      // Build request.
-      // --------------------------------------------------------
 
       const url =
         `${API_URL}/api/dropbox/file?path=` +
@@ -590,10 +509,6 @@ export default function Profile() {
         "DROPBOX FILE REQUEST:",
         url
       );
-
-      // --------------------------------------------------------
-      // Request actual file from backend.
-      // --------------------------------------------------------
 
       const response =
         await fetch(
@@ -608,22 +523,6 @@ export default function Profile() {
           }
         );
 
-      console.log(
-        "DROPBOX FILE STATUS:",
-        response.status
-      );
-
-      console.log(
-        "DROPBOX FILE CONTENT TYPE:",
-        response.headers.get(
-          "content-type"
-        )
-      );
-
-      // --------------------------------------------------------
-      // Handle backend errors.
-      // --------------------------------------------------------
-
       if (!response.ok) {
         let errorMessage =
           `Dropbox file request failed with status ${response.status}.`;
@@ -632,21 +531,12 @@ export default function Profile() {
           const errorData =
             await response.json();
 
-          console.log(
-            "DROPBOX FILE ERROR RESPONSE:",
-            errorData
-          );
-
-          if (
-            errorData?.message
-          ) {
+          if (errorData?.message) {
             errorMessage =
               errorData.message;
           }
-        } catch (jsonError) {
-          console.warn(
-            "Dropbox error response was not JSON."
-          );
+        } catch {
+          // Ignore non-JSON error response.
         }
 
         throw new Error(
@@ -654,39 +544,14 @@ export default function Profile() {
         );
       }
 
-      // --------------------------------------------------------
-      // Get the actual file as a Blob.
-      // --------------------------------------------------------
-
       const blob =
         await response.blob();
 
-      console.log(
-        "DROPBOX BLOB TYPE:",
-        blob.type
-      );
-
-      console.log(
-        "DROPBOX BLOB SIZE:",
-        blob.size
-      );
-
-      if (
-        !blob ||
-        blob.size === 0
-      ) {
+      if (!blob || blob.size === 0) {
         throw new Error(
           "Dropbox returned an empty file."
         );
       }
-
-      // --------------------------------------------------------
-      // Determine content type.
-      //
-      // If the backend supplied a valid content type,
-      // use it.
-      // Otherwise use the browser's blob type.
-      // --------------------------------------------------------
 
       let contentType =
         response.headers.get(
@@ -695,21 +560,10 @@ export default function Profile() {
         blob.type ||
         "application/octet-stream";
 
-      // Remove parameters such as:
-      // application/json; charset=utf-8
       contentType =
         contentType
           .split(";")[0]
           .trim();
-
-      console.log(
-        "FINAL CONTENT TYPE:",
-        contentType
-      );
-
-      // --------------------------------------------------------
-      // Create browser object URL.
-      // --------------------------------------------------------
 
       const blobWithType =
         new Blob(
@@ -724,39 +578,18 @@ export default function Profile() {
           blobWithType
         );
 
-      console.log(
-        "BLOB URL CREATED:",
-        blobUrl
-      );
-
-      // --------------------------------------------------------
-      // Open the file.
-      // --------------------------------------------------------
-
       const newWindow =
         window.open(
           blobUrl,
           "_blank"
         );
 
-      // --------------------------------------------------------
-      // If browser blocks popup.
-      // --------------------------------------------------------
-
       if (!newWindow) {
-        console.warn(
-          "Popup blocked. Opening file in current tab."
-        );
-
         window.location.href =
           blobUrl;
 
         return;
       }
-
-      // --------------------------------------------------------
-      // Clean up temporary URL later.
-      // --------------------------------------------------------
 
       setTimeout(() => {
         window.URL.revokeObjectURL(
@@ -764,21 +597,15 @@ export default function Profile() {
         );
       }, 60000);
 
+      console.log(
+        "OPENED DROPBOX FILE:",
+        fileName
+      );
+
     } catch (error) {
       console.error(
-        "================================"
-      );
-
-      console.error(
-        "DROPBOX VIEW ERROR:"
-      );
-
-      console.error(
+        "DROPBOX VIEW ERROR:",
         error
-      );
-
-      console.error(
-        "================================"
       );
 
       setError(
@@ -798,36 +625,81 @@ export default function Profile() {
   // ============================================================
 
   useEffect(() => {
-    const loadPage =
-      async () => {
-        // ------------------------------------------------------
-        // Load normal profile.
-        // ------------------------------------------------------
+    let cancelled = false;
 
-        await fetchProfile();
+    const loadPage = async () => {
+      console.log(
+        "================================"
+      );
 
-        // ------------------------------------------------------
-        // Check Dropbox OAuth result.
-        // ------------------------------------------------------
+      console.log(
+        "PROFILE PAGE STARTED"
+      );
 
-        const params =
-          new URLSearchParams(
-            window.location.search
-          );
+      console.log(
+        "CURRENT URL:",
+        window.location.href
+      );
 
-        const dropboxStatus =
-          params.get(
-            "dropbox"
-          );
+      console.log(
+        "CURRENT PATH:",
+        window.location.pathname
+      );
 
-        if (
-          dropboxStatus ===
-          "connected"
-        ) {
-          console.log(
-            "Dropbox OAuth completed successfully."
-          );
+      console.log(
+        "CURRENT SEARCH:",
+        window.location.search
+      );
 
+      console.log(
+        "================================"
+      );
+
+      // --------------------------------------------------------
+      // READ DROPBOX CALLBACK FIRST
+      // --------------------------------------------------------
+
+      const params =
+        new URLSearchParams(
+          window.location.search
+        );
+
+      const dropboxStatus =
+        params.get(
+          "dropbox"
+        );
+
+      const dropboxMessage =
+        params.get(
+          "message"
+        );
+
+      console.log(
+        "DROPBOX STATUS:",
+        dropboxStatus
+      );
+
+      // --------------------------------------------------------
+      // OAUTH SUCCESS
+      // --------------------------------------------------------
+
+      if (
+        dropboxStatus ===
+        "connected"
+      ) {
+        console.log(
+          "================================"
+        );
+
+        console.log(
+          "DROPBOX OAUTH SUCCESS"
+        );
+
+        console.log(
+          "================================"
+        );
+
+        if (!cancelled) {
           setDropboxConnected(
             true
           );
@@ -835,26 +707,74 @@ export default function Profile() {
           setMessage(
             "Dropbox connected successfully!"
           );
-
-          // ----------------------------------------------------
-          // Remove OAuth query from browser address.
-          // ----------------------------------------------------
-
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
-
-          // ----------------------------------------------------
-          // Load Dropbox files.
-          // ----------------------------------------------------
-
-          await fetchDropboxFiles();
         }
-      };
+
+        // Remove ?dropbox=connected from address.
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
+
+      }
+
+      // --------------------------------------------------------
+      // OAUTH ERROR
+      // --------------------------------------------------------
+
+      if (
+        dropboxStatus ===
+        "error"
+      ) {
+        if (!cancelled) {
+          setError(
+            dropboxMessage ||
+            "Dropbox connection failed."
+          );
+        }
+
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
+      }
+
+      // --------------------------------------------------------
+      // LOAD NORMAL PROFILE
+      // --------------------------------------------------------
+
+      await fetchProfile();
+
+      if (cancelled) {
+        return;
+      }
+
+      // --------------------------------------------------------
+      // IF OAUTH WAS SUCCESSFUL, LOAD DROPBOX FILES
+      // --------------------------------------------------------
+
+      if (
+        dropboxStatus ===
+        "connected"
+      ) {
+        console.log(
+          "Loading Dropbox files after OAuth..."
+        );
+
+        await fetchDropboxFiles();
+      }
+
+      if (!cancelled) {
+        setLoading(false);
+      }
+    };
 
     loadPage();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ============================================================
@@ -882,31 +802,21 @@ export default function Profile() {
 
       <div className="max-w-2xl mx-auto">
 
-        {/* ======================================================
-            PAGE TITLE
-        ====================================================== */}
-
         <h1 className="text-4xl font-bold mb-8">
           👤 Profile
         </h1>
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8">
 
-          {/* ====================================================
-              AVATAR
-          ==================================================== */}
+          {/* AVATAR */}
 
           <div className="flex justify-center mb-6">
-
             <div className="w-24 h-24 rounded-full bg-sky-600 flex items-center justify-center text-4xl">
               👤
             </div>
-
           </div>
 
-          {/* ====================================================
-              USER ID
-          ==================================================== */}
+          {/* USER ID */}
 
           <div className="mb-6">
 
@@ -915,14 +825,13 @@ export default function Profile() {
             </label>
 
             <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-gray-300 break-all">
-              {profile?.id || "Not available"}
+              {profile?.id ||
+                "Not available"}
             </div>
 
           </div>
 
-          {/* ====================================================
-              EMAIL
-          ==================================================== */}
+          {/* EMAIL */}
 
           {profile?.email && (
             <div className="mb-6">
@@ -938,9 +847,7 @@ export default function Profile() {
             </div>
           )}
 
-          {/* ====================================================
-              DISPLAY NAME
-          ==================================================== */}
+          {/* DISPLAY NAME */}
 
           <form
             onSubmit={
@@ -976,9 +883,7 @@ export default function Profile() {
 
           </form>
 
-          {/* ====================================================
-              DROPBOX SECTION
-          ==================================================== */}
+          {/* DROPBOX */}
 
           <div className="mt-8 pt-8 border-t border-slate-700">
 
@@ -986,41 +891,10 @@ export default function Profile() {
               Dropbox
             </h2>
 
-            {/* ==================================================
-                NOT CONNECTED
-            ================================================== */}
-
-            {!dropboxConnected && (
-              <div>
-
-                <p className="text-gray-400 mb-4">
-                  Connect your Dropbox account to
-                  access your Dropbox files.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={
-                    connectDropbox
-                  }
-                  className="w-full bg-blue-600 hover:bg-blue-500 rounded-lg p-3 font-semibold"
-                >
-                  Connect Dropbox
-                </button>
-
-              </div>
-            )}
-
-            {/* ==================================================
-                CONNECTED
-            ================================================== */}
+            {/* CONNECTED */}
 
             {dropboxConnected && (
               <div>
-
-                {/* ==============================================
-                    CONNECTED STATUS
-                ============================================== */}
 
                 <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-4">
 
@@ -1029,15 +903,10 @@ export default function Profile() {
                   </p>
 
                   <p className="text-gray-400 text-sm mt-1">
-                    Your Dropbox account is connected
-                    successfully.
+                    Your Dropbox account is connected successfully.
                   </p>
 
                 </div>
-
-                {/* ==============================================
-                    REFRESH
-                ============================================== */}
 
                 <button
                   type="button"
@@ -1054,19 +923,11 @@ export default function Profile() {
                     : "Refresh Dropbox Files"}
                 </button>
 
-                {/* ==============================================
-                    FILE LIST
-                ============================================== */}
-
                 <div className="mt-5">
 
                   <h3 className="text-lg font-semibold mb-3">
                     Dropbox Files
                   </h3>
-
-                  {/* ============================================
-                      LOADING
-                  ============================================ */}
 
                   {dropboxLoading && (
                     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-gray-400">
@@ -1074,20 +935,12 @@ export default function Profile() {
                     </div>
                   )}
 
-                  {/* ============================================
-                      EMPTY
-                  ============================================ */}
-
                   {!dropboxLoading &&
                     dropboxFiles.length === 0 && (
                       <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-gray-400">
                         No files found in Dropbox.
                       </div>
                     )}
-
-                  {/* ============================================
-                      FILES
-                  ============================================ */}
 
                   {!dropboxLoading &&
                     dropboxFiles.length > 0 && (
@@ -1114,21 +967,15 @@ export default function Profile() {
                                 className="bg-slate-900 border border-slate-700 rounded-lg p-4"
                               >
 
-                                {/* FILE NAME */}
-
                                 <p className="font-semibold text-white break-all">
                                   📄{" "}
                                   {file?.name ||
                                     "Unnamed file"}
                                 </p>
 
-                                {/* FILE PATH */}
-
                                 <p className="text-gray-500 text-sm mt-1 break-all">
                                   {filePath}
                                 </p>
-
-                                {/* FILE SIZE */}
 
                                 <p className="text-gray-500 text-xs mt-1">
                                   {typeof file?.size ===
@@ -1136,8 +983,6 @@ export default function Profile() {
                                     ? `${file.size.toLocaleString()} bytes`
                                     : "Size unavailable"}
                                 </p>
-
-                                {/* VIEW BUTTON */}
 
                                 <button
                                   type="button"
@@ -1169,11 +1014,31 @@ export default function Profile() {
               </div>
             )}
 
+            {/* NOT CONNECTED */}
+
+            {!dropboxConnected && (
+              <div>
+
+                <p className="text-gray-400 mb-4">
+                  Connect your Dropbox account to access your Dropbox files.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={
+                    connectDropbox
+                  }
+                  className="w-full bg-blue-600 hover:bg-blue-500 rounded-lg p-3 font-semibold"
+                >
+                  Connect Dropbox
+                </button>
+
+              </div>
+            )}
+
           </div>
 
-          {/* ====================================================
-              SUCCESS MESSAGE
-          ==================================================== */}
+          {/* MESSAGE */}
 
           {message && (
             <div className="mt-4 bg-sky-900/30 border border-sky-700 rounded-lg p-3 text-center text-sky-300">
@@ -1181,9 +1046,7 @@ export default function Profile() {
             </div>
           )}
 
-          {/* ====================================================
-              ERROR MESSAGE
-          ==================================================== */}
+          {/* ERROR */}
 
           {error && (
             <div className="mt-4 bg-red-900/30 border border-red-700 rounded-lg p-3 text-center text-red-300">
