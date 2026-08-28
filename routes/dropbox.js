@@ -1,142 +1,64 @@
 const express = require("express");
 const router = express.Router();
 
-const { Dropbox, DropboxAuth } = require("dropbox");
+const { DropboxAuth } = require("dropbox");
 
 const authenticateUser = require("../middleware/authMiddleware");
 const supabaseAdmin = require("../config/supabaseAdmin");
 
-const DROPBOX_CLIENT_ID = process.env.DROPBOX_APP_KEY;
-const DROPBOX_CLIENT_SECRET = process.env.DROPBOX_APP_SECRET;
-const DROPBOX_REDIRECT_URI = process.env.DROPBOX_REDIRECT_URI;
+const {
+  getDropboxClient,
+} = require("../services/dropboxService");
+
+const {
+  getDropboxClient,
+  refreshDropboxClient,
+} = require("../services/dropboxService");
+
+const DROPBOX_CLIENT_ID =
+  process.env.DROPBOX_APP_KEY;
+
+const DROPBOX_CLIENT_SECRET =
+  process.env.DROPBOX_APP_SECRET;
+
+const DROPBOX_REDIRECT_URI =
+  process.env.DROPBOX_REDIRECT_URI;
+
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  "http://localhost:5173";
 
 
 // ============================================================
-// GET DROPBOX CLIENT
+// HELPER: IS DROPBOX 401?
 // ============================================================
 
-async function getDropboxClient(userId) {
-  if (!userId) {
-    throw new Error("Dropbox client requires a user ID.");
-  }
+function isDropboxUnauthorized(error) {
+  const status =
+    error?.status ||
+    error?.statusCode ||
+    error?.response?.status;
 
-  const { data: connection, error } = await supabaseAdmin
-    .from("dropbox_connections")
-    .select(
-      "user_id, access_token, refresh_token, expires_at"
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
+  const message =
+    error?.message ||
+    error?.error?.error_summary ||
+    "";
 
-  if (error) {
-    throw new Error(
-      `Failed to read Dropbox connection: ${error.message}`
-    );
-  }
-
-  if (!connection) {
-    throw new Error(
-      "No Dropbox connection found. Please reconnect Dropbox."
-    );
-  }
-
-  if (!connection.refresh_token) {
-    throw new Error(
-      "Dropbox refresh token is missing. Please reconnect Dropbox."
-    );
-  }
-
-  console.log("Dropbox connection found.");
-  console.log(
-    "Access token exists:",
-    !!connection.access_token
+  return (
+    Number(status) === 401 ||
+    message.toLowerCase().includes("401") ||
+    message
+      .toLowerCase()
+      .includes("expired_access_token") ||
+    message
+      .toLowerCase()
+      .includes("invalid_access_token")
   );
-  console.log(
-    "Refresh token exists:",
-    !!connection.refresh_token
-  );
-  console.log(
-    "Expires at:",
-    connection.expires_at
-  );
-
-  const dbxAuth = new DropboxAuth({
-    clientId: DROPBOX_CLIENT_ID,
-    clientSecret: DROPBOX_CLIENT_SECRET,
-    accessToken: connection.access_token,
-    refreshToken: connection.refresh_token,
-    accessTokenExpiresAt: connection.expires_at
-      ? new Date(connection.expires_at)
-      : undefined,
-  });
-
-  try {
-    await dbxAuth.checkAndRefreshAccessToken();
-
-    console.log(
-      "Dropbox access token checked/refreshed successfully."
-    );
-  } catch (error) {
-    console.error(
-      "Dropbox token refresh failed:",
-      error
-    );
-
-    throw new Error(
-      "Dropbox authorization has expired or been revoked. Please reconnect Dropbox."
-    );
-  }
-
-  const accessToken = dbxAuth.getAccessToken();
-  const refreshToken = dbxAuth.getRefreshToken();
-  const expiresAt = dbxAuth.getAccessTokenExpiresAt();
-
-  if (!accessToken) {
-    throw new Error(
-      "Dropbox did not provide a valid access token."
-    );
-  }
-
-  const updateData = {
-    access_token: accessToken,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (refreshToken) {
-    updateData.refresh_token = refreshToken;
-  }
-
-  if (expiresAt) {
-    updateData.expires_at = new Date(
-      expiresAt
-    ).toISOString();
-  }
-
-  const { error: updateError } = await supabaseAdmin
-    .from("dropbox_connections")
-    .update(updateData)
-    .eq("user_id", userId);
-
-  if (updateError) {
-    console.error(
-      "Warning: failed to save refreshed Dropbox token:",
-      updateError
-    );
-  }
-
-  const dbx = new Dropbox({
-    auth: dbxAuth,
-  });
-
-  return {
-    dbx,
-    dbxAuth,
-  };
 }
 
 
 // ============================================================
-// DROPBOX OAUTH CONNECT
+// DROPBOX CONNECT
 // ============================================================
 
 router.get(
@@ -149,6 +71,10 @@ router.get(
         !DROPBOX_CLIENT_SECRET ||
         !DROPBOX_REDIRECT_URI
       ) {
+        console.error(
+          "Dropbox environment variables are missing."
+        );
+
         return res.status(500).json({
           success: false,
           message:
@@ -159,8 +85,25 @@ router.get(
       const userId = req.user.id;
 
       console.log(
-        "Starting Dropbox OAuth for user:",
+        "=========================================="
+      );
+
+      console.log(
+        "STARTING DROPBOX OAUTH"
+      );
+
+      console.log(
+        "User:",
         userId
+      );
+
+      console.log(
+        "Redirect URI:",
+        DROPBOX_REDIRECT_URI
+      );
+
+      console.log(
+        "=========================================="
       );
 
       const dbxAuth = new DropboxAuth({
@@ -176,20 +119,24 @@ router.get(
           "offline"
         );
 
+      console.log(
+        "Dropbox OAuth URL generated successfully."
+      );
+
       return res.json({
         success: true,
         authUrl,
       });
     } catch (error) {
       console.error(
-        "Dropbox OAuth start error:",
+        "DROPBOX CONNECT ERROR:",
         error
       );
 
       return res.status(500).json({
         success: false,
         message:
-          error.message ||
+          error?.message ||
           "Failed to start Dropbox connection.",
       });
     }
@@ -205,7 +152,32 @@ router.get(
   "/callback",
   async (req, res) => {
     try {
-      const { code, state } = req.query;
+      const {
+        code,
+        state,
+      } = req.query;
+
+      console.log(
+        "=========================================="
+      );
+
+      console.log(
+        "DROPBOX OAUTH CALLBACK"
+      );
+
+      console.log(
+        "Code received:",
+        Boolean(code)
+      );
+
+      console.log(
+        "State received:",
+        Boolean(state)
+      );
+
+      console.log(
+        "=========================================="
+      );
 
       if (!code) {
         return res.status(400).json({
@@ -225,15 +197,6 @@ router.get(
 
       const userId = state;
 
-      console.log(
-        "Dropbox OAuth callback received."
-      );
-
-      console.log(
-        "User ID:",
-        userId
-      );
-
       const dbxAuth = new DropboxAuth({
         clientId: DROPBOX_CLIENT_ID,
         clientSecret: DROPBOX_CLIENT_SECRET,
@@ -245,28 +208,42 @@ router.get(
           code
         );
 
+      console.log(
+        "Dropbox token exchange completed."
+      );
+
       const accessToken =
-        tokenResult.result.access_token;
+        tokenResult?.result?.access_token;
 
       const refreshToken =
-        tokenResult.result.refresh_token;
+        tokenResult?.result?.refresh_token;
 
       const expiresIn =
-        tokenResult.result.expires_in;
+        tokenResult?.result?.expires_in;
 
       if (!accessToken) {
-        return res.status(500).json({
-          success: false,
-          message:
-            "Dropbox did not return an access token.",
-        });
+        throw new Error(
+          "Dropbox did not return an access token."
+        );
+      }
+
+      if (!refreshToken) {
+        throw new Error(
+          "Dropbox did not return a refresh token. Please reconnect Dropbox with offline access."
+        );
       }
 
       const expiresAt = expiresIn
         ? new Date(
-            Date.now() + expiresIn * 1000
+            Date.now() +
+              Number(expiresIn) * 1000
           ).toISOString()
         : null;
+
+      console.log(
+        "Saving Dropbox connection for user:",
+        userId
+      );
 
       const { error } =
         await supabaseAdmin
@@ -287,14 +264,14 @@ router.get(
 
       if (error) {
         console.error(
-          "Failed to save Dropbox connection:",
+          "DROPBOX CONNECTION SAVE ERROR:",
           error
         );
 
         return res.status(500).json({
           success: false,
           message:
-            "Dropbox connected but failed to save the connection.",
+            "Dropbox authorization succeeded but the connection could not be saved.",
           details: error.message,
         });
       }
@@ -303,19 +280,49 @@ router.get(
         "Dropbox connection saved successfully."
       );
 
+      /**
+       * IMPORTANT:
+       *
+       * Redirect to the frontend URL, NOT the backend URL.
+       *
+       * In production FRONTEND_URL should be:
+       *
+       * https://personal-cloud-storage-frontend.onrender.com
+       */
+      const redirectUrl =
+        `${FRONTEND_URL}/profile?dropbox=connected`;
+
+      console.log(
+        "Redirecting user to:",
+        redirectUrl
+      );
+
       return res.redirect(
-        "http://localhost:5173/profile?dropbox=connected"
+        redirectUrl
       );
     } catch (error) {
       console.error(
-        "Dropbox callback error:",
-        error
+        "=========================================="
+      );
+
+      console.error(
+        "DROPBOX CALLBACK ERROR"
+      );
+
+      console.error(
+        error?.error ||
+          error?.message ||
+          error
+      );
+
+      console.error(
+        "=========================================="
       );
 
       return res.status(500).json({
         success: false,
         message:
-          error.message ||
+          error?.message ||
           "Failed to complete Dropbox connection.",
       });
     }
@@ -335,28 +342,79 @@ router.get(
       const userId = req.user.id;
 
       console.log(
-        "Fetching Dropbox files for user:",
+        "=========================================="
+      );
+
+      console.log(
+        "LIST DROPBOX FILES"
+      );
+
+      console.log(
+        "User:",
         userId
       );
 
-      const { dbx } =
-        await getDropboxClient(userId);
+      console.log(
+        "=========================================="
+      );
 
-      const result =
-        await dbx.filesListFolder({
-          path: "",
-        });
+      const {
+        dbx,
+        dbxAuth,
+      } = await getDropboxClient(
+        userId
+      );
+
+      let result;
+
+      try {
+        result =
+          await dbx.filesListFolder({
+            path: "",
+          });
+      } catch (error) {
+        /**
+         * If Dropbox says the access token is invalid,
+         * refresh it once and retry.
+         */
+        if (
+          isDropboxUnauthorized(error)
+        ) {
+          console.log(
+            "Dropbox returned 401 while listing files."
+          );
+
+          const refreshedDbx =
+            await refreshDropboxClient(
+              userId,
+              dbxAuth
+            );
+
+          result =
+            await refreshedDbx.filesListFolder({
+              path: "",
+            });
+        } else {
+          throw error;
+        }
+      }
+
+      const entries =
+        result?.result?.entries || [];
 
       const files =
-        result.result.entries
+        entries
           .filter(
             (entry) =>
-              entry[".tag"] === "file"
+              entry[".tag"] ===
+              "file"
           )
           .map((file) => ({
             id: file.id,
             name: file.name,
-            path: file.path_display,
+            path:
+              file.path_display ||
+              file.path_lower,
             size: file.size,
             modified:
               file.server_modified,
@@ -373,14 +431,37 @@ router.get(
       });
     } catch (error) {
       console.error(
-        "Dropbox files error:",
-        error
+        "=========================================="
+      );
+
+      console.error(
+        "DROPBOX FILE LIST ERROR"
+      );
+
+      console.error(
+        "Message:",
+        error?.message
+      );
+
+      console.error(
+        "Status:",
+        error?.status ||
+          error?.statusCode
+      );
+
+      console.error(
+        error?.error ||
+          ""
+      );
+
+      console.error(
+        "=========================================="
       );
 
       return res.status(500).json({
         success: false,
         message:
-          error.message ||
+          error?.message ||
           "Failed to load Dropbox files.",
       });
     }
@@ -397,9 +478,10 @@ router.get(
   authenticateUser,
   async (req, res) => {
     try {
-      const { path } = req.query;
+      const filePath =
+        req.query.path;
 
-      if (!path) {
+      if (!filePath) {
         return res.status(400).json({
           success: false,
           message:
@@ -410,11 +492,11 @@ router.get(
       const userId = req.user.id;
 
       console.log(
-        "================================"
+        "=========================================="
       );
 
       console.log(
-        "DROPBOX FILE REQUEST"
+        "DROPBOX VIEW FILE"
       );
 
       console.log(
@@ -424,26 +506,91 @@ router.get(
 
       console.log(
         "Path:",
-        path
+        filePath
       );
 
       console.log(
-        "================================"
+        "=========================================="
       );
 
-      const { dbx } =
-        await getDropboxClient(userId);
-
-      console.log(
-        "Calling Dropbox filesDownload..."
+      const {
+        dbx,
+        dbxAuth,
+      } = await getDropboxClient(
+        userId
       );
 
-      const result =
-        await dbx.filesDownload({
-          path,
-        });
+      let result;
 
-      const file = result.result;
+      try {
+        console.log(
+          "Calling Dropbox filesDownload..."
+        );
+
+        result =
+          await dbx.filesDownload({
+            path: filePath,
+          });
+
+        console.log(
+          "Dropbox filesDownload succeeded."
+        );
+      } catch (error) {
+        console.error(
+          "First Dropbox download attempt failed."
+        );
+
+        console.error(
+          "Status:",
+          error?.status ||
+            error?.statusCode
+        );
+
+        console.error(
+          "Message:",
+          error?.message
+        );
+
+        /**
+         * THIS IS THE IMPORTANT FIX.
+         *
+         * Dropbox can return 401 even when our stored
+         * expires_at value has not passed.
+         *
+         * Refresh the token and retry the download.
+         */
+        if (
+          isDropboxUnauthorized(error)
+        ) {
+          console.log(
+            "401 detected. Refreshing Dropbox token..."
+          );
+
+          const refreshedDbx =
+            await refreshDropboxClient(
+              userId,
+              dbxAuth
+            );
+
+          console.log(
+            "Retrying Dropbox download with refreshed token..."
+          );
+
+          result =
+            await refreshedDbx.filesDownload({
+              path: filePath,
+            });
+
+          console.log(
+            "Dropbox download succeeded after token refresh."
+          );
+        } else {
+          throw error;
+        }
+      }
+
+      const file =
+        result?.result;
 
       if (!file) {
         throw new Error(
@@ -452,7 +599,8 @@ router.get(
       }
 
       const fileName =
-        file.name || "file";
+        file.name ||
+        "dropbox-file";
 
       const extension =
         fileName
@@ -471,6 +619,7 @@ router.get(
         pdf: "application/pdf",
 
         txt: "text/plain",
+        csv: "text/csv",
 
         mp4: "video/mp4",
         webm: "video/webm",
@@ -506,58 +655,144 @@ router.get(
         mimeTypes[extension] ||
         "application/octet-stream";
 
+      /**
+       * Dropbox's fileBinary can be a Uint8Array,
+       * ArrayBuffer, or Buffer depending on the SDK/runtime.
+       *
+       * Convert it to a Node Buffer before sending.
+       */
+      let fileBuffer;
+
+      if (
+        Buffer.isBuffer(
+          file.fileBinary
+        )
+      ) {
+        fileBuffer =
+          file.fileBinary;
+      } else if (
+        file.fileBinary instanceof
+        Uint8Array
+      ) {
+        fileBuffer =
+          Buffer.from(
+            file.fileBinary
+          );
+      } else if (
+        file.fileBinary instanceof
+        ArrayBuffer
+      ) {
+        fileBuffer =
+          Buffer.from(
+            new Uint8Array(
+              file.fileBinary
+            )
+          );
+      } else {
+        fileBuffer =
+          Buffer.from(
+            file.fileBinary
+          );
+      }
+
+      console.log(
+        "File downloaded from Dropbox:"
+      );
+
+      console.log(
+        "Name:",
+        fileName
+      );
+
+      console.log(
+        "Type:",
+        contentType
+      );
+
+      console.log(
+        "Size:",
+        fileBuffer.length
+      );
+
+      /**
+       * Tell the browser to display the file.
+       */
       res.setHeader(
         "Content-Type",
         contentType
       );
 
       res.setHeader(
+        "Content-Length",
+        fileBuffer.length
+      );
+
+      res.setHeader(
         "Content-Disposition",
-        `inline; filename="${encodeURIComponent(
-          fileName
+        `inline; filename="${fileName.replace(
+          /"/g,
+          ""
         )}"`
       );
 
       res.setHeader(
         "Cache-Control",
-        "no-store"
+        "no-store, no-cache, must-revalidate"
       );
 
-      console.log(
-        "Sending Dropbox file:",
-        fileName
-      );
-
-      return res.send(
-        file.fileBinary
+      return res.end(
+        fileBuffer
       );
     } catch (error) {
       console.error(
-        "================================"
+        "=========================================="
       );
 
       console.error(
-        "DROPBOX FILE ERROR"
+        "DROPBOX VIEW FILE ERROR"
       );
 
       console.error(
         "Message:",
-        error.message
+        error?.message
       );
 
       console.error(
         "Status:",
-        error.status
+        error?.status ||
+          error?.statusCode
       );
 
       console.error(
-        "================================"
+        "Dropbox error:",
+        error?.error ||
+          error?.response?.body ||
+          ""
       );
+
+      console.error(
+        "=========================================="
+      );
+
+      /**
+       * If Dropbox authorization is genuinely dead,
+       * tell the frontend to reconnect.
+       */
+      if (
+        isDropboxUnauthorized(error)
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Dropbox authorization has expired. Please reconnect Dropbox.",
+          reconnectRequired: true,
+        });
+      }
 
       return res.status(500).json({
         success: false,
         message:
-          error.message ||
+          error?.message ||
           "Failed to retrieve Dropbox file.",
       });
     }
@@ -574,9 +809,10 @@ router.get(
   authenticateUser,
   async (req, res) => {
     try {
-      const { path } = req.query;
+      const filePath =
+        req.query.path;
 
-      if (!path) {
+      if (!filePath) {
         return res.status(400).json({
           success: false,
           message:
@@ -584,20 +820,92 @@ router.get(
         });
       }
 
-      const userId = req.user.id;
+      const userId =
+        req.user.id;
 
-      const { dbx } =
-        await getDropboxClient(userId);
+      const {
+        dbx,
+        dbxAuth,
+      } = await getDropboxClient(
+        userId
+      );
 
-      const result =
-        await dbx.filesDownload({
-          path,
-        });
+      let result;
 
-      const file = result.result;
+      try {
+        result =
+          await dbx.filesDownload({
+            path: filePath,
+          });
+      } catch (error) {
+        if (
+          isDropboxUnauthorized(error)
+        ) {
+          console.log(
+            "401 during download. Refreshing token..."
+          );
+
+          const refreshedDbx =
+            await refreshDropboxClient(
+              userId,
+              dbxAuth
+            );
+
+          result =
+            await refreshedDbx.filesDownload({
+              path: filePath,
+            });
+        } else {
+          throw error;
+        }
+      }
+
+      const file =
+        result?.result;
+
+      if (!file) {
+        throw new Error(
+          "Dropbox returned no file."
+        );
+      }
 
       const fileName =
-        file.name || "download";
+        file.name ||
+        "download";
+
+      let fileBuffer;
+
+      if (
+        Buffer.isBuffer(
+          file.fileBinary
+        )
+      ) {
+        fileBuffer =
+          file.fileBinary;
+      } else if (
+        file.fileBinary instanceof
+        Uint8Array
+      ) {
+        fileBuffer =
+          Buffer.from(
+            file.fileBinary
+          );
+      } else if (
+        file.fileBinary instanceof
+        ArrayBuffer
+      ) {
+        fileBuffer =
+          Buffer.from(
+            new Uint8Array(
+              file.fileBinary
+            )
+          );
+      } else {
+        fileBuffer =
+          Buffer.from(
+            file.fileBinary
+          );
+      }
 
       res.setHeader(
         "Content-Type",
@@ -605,9 +913,15 @@ router.get(
       );
 
       res.setHeader(
+        "Content-Length",
+        fileBuffer.length
+      );
+
+      res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${encodeURIComponent(
-          fileName
+        `attachment; filename="${fileName.replace(
+          /"/g,
+          ""
         )}"`
       );
 
@@ -616,19 +930,30 @@ router.get(
         "no-store"
       );
 
-      return res.send(
-        file.fileBinary
+      return res.end(
+        fileBuffer
       );
     } catch (error) {
       console.error(
-        "Dropbox download error:",
+        "DROPBOX DOWNLOAD ERROR:",
         error
       );
+
+      if (
+        isDropboxUnauthorized(error)
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Dropbox authorization has expired. Please reconnect Dropbox.",
+          reconnectRequired: true,
+        });
+      }
 
       return res.status(500).json({
         success: false,
         message:
-          error.message ||
+          error?.message ||
           "Failed to download Dropbox file.",
       });
     }
