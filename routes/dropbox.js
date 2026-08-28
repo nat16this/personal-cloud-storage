@@ -30,6 +30,9 @@ const FRONTEND_URL =
   process.env.FRONTEND_URL ||
   "http://localhost:5173";
 
+console.log("================================");
+console.log("FRONTEND_URL BEING USED:", FRONTEND_URL);
+console.log("================================");
 // ============================================================
 // CHECK DROPBOX CONFIGURATION
 // ============================================================
